@@ -1035,7 +1035,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Find the location right within the upper edge of button 1.
-    final Offset start = tester.getTopLeft(find.text('Button 1')) + const Offset(30, -15);
+    final Offset start = tester.getTopLeft(
+      find.widgetWithText(CupertinoActionSheetAction, 'Button 1'),
+    ) + const Offset(30, 5);
     // Verify that the start location is within button 1.
     await tester.tapAt(start);
     expect(pressed, 1);
@@ -1715,7 +1717,7 @@ void main() {
 
     // Exit animation
     await tester.tapAt(const Offset(20.0, 20.0));
-    await tester.pumpFrames(exitRecorder.record(target), const Duration(milliseconds: 400));
+    await tester.pumpFrames(exitRecorder.record(target), const Duration(milliseconds: 450));
 
     // Action sheet has disappeared
     expect(find.byType(CupertinoActionSheet), findsNothing);
@@ -1760,7 +1762,7 @@ void main() {
 
     // Exit animation
     await tester.tapAt(const Offset(20.0, 20.0));
-    await tester.pumpFrames(recorder.record(target), const Duration(milliseconds: 400));
+    await tester.pumpFrames(recorder.record(target), const Duration(milliseconds: 450));
 
     // Action sheet has disappeared
     expect(find.byType(CupertinoActionSheet), findsNothing);
@@ -1951,6 +1953,44 @@ void main() {
     expect(
       RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
       kIsWeb ? SystemMouseCursors.click : SystemMouseCursors.basic,
+    );
+  });
+
+  testWidgets('CupertinoActionSheet action cursor behavior', (WidgetTester tester) async {
+    const SystemMouseCursor customCursor = SystemMouseCursors.grab;
+
+    await tester.pumpWidget(
+      createAppWithButtonThatLaunchesActionSheet(
+        CupertinoActionSheet(
+          title: const Text('The title'),
+          message: const Text('Message'),
+          actions: <Widget>[
+            CupertinoActionSheetAction(
+              mouseCursor: customCursor,
+              onPressed: () { },
+              child: const Text('One'),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.tap(find.text('Go'));
+    await tester.pump();
+
+    final TestGesture gesture = await tester.createGesture(kind: PointerDeviceKind.mouse, pointer: 1);
+    await gesture.addPointer(location: const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.basic,
+   );
+
+    final Offset actionSheetAction = tester.getCenter(find.text('One'));
+    await gesture.moveTo(actionSheetAction);
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      customCursor,
     );
   });
 

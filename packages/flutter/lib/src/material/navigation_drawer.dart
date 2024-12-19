@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'color_scheme.dart';
 import 'colors.dart';
 import 'drawer.dart';
+import 'ink_decoration.dart';
 import 'ink_well.dart';
 import 'material.dart';
 import 'material_localizations.dart';
@@ -196,9 +197,12 @@ class NavigationDrawerDestination extends StatelessWidget {
     this.enabled = true,
   });
 
-  /// Sets the color of the destination.
+  /// The background color of the destination.
   ///
-  /// If this is null, then [NavigationDrawerThemeData.backgroundColor].
+  /// If this is null, no background is set and [NavigationDrawer.backgroundColor] will be visible.
+  ///
+  /// This is the background color of the whole rectangular area behind the drawer destination.
+  /// To customize only the indicator color consider using [NavigationDrawer.indicatorColor].
   final Color? backgroundColor;
 
   /// The [Widget] (usually an [Icon]) that's displayed for this
@@ -339,9 +343,6 @@ class _NavigationDestinationBuilder extends StatelessWidget {
   /// Defaults to true.
   final bool enabled;
 
-  /// Sets the color of navigation destination.
-  ///
-  /// If this is null, then [NavigationDrawerThemeData.backgroundColor] is used.
   final Color? backgroundColor;
 
   @override
@@ -350,42 +351,46 @@ class _NavigationDestinationBuilder extends StatelessWidget {
     final NavigationDrawerThemeData navigationDrawerTheme = NavigationDrawerTheme.of(context);
     final NavigationDrawerThemeData defaults = _NavigationDrawerDefaultsM3(context);
 
-    final Row destinationBody = Row(
-      children: <Widget>[
-        const SizedBox(width: 16),
-        buildIcon(context),
-        const SizedBox(width: 12),
-        buildLabel(context),
-      ],
+    final InkWell inkWell = InkWell(
+      highlightColor: Colors.transparent,
+      onTap: enabled ? info.onTap : null,
+      customBorder: info.indicatorShape ?? navigationDrawerTheme.indicatorShape ?? defaults.indicatorShape!,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          NavigationIndicator(
+            animation: info.selectedAnimation,
+            color: info.indicatorColor ?? navigationDrawerTheme.indicatorColor ?? defaults.indicatorColor!,
+            shape: info.indicatorShape ?? navigationDrawerTheme.indicatorShape ?? defaults.indicatorShape!,
+            width: (navigationDrawerTheme.indicatorSize ?? defaults.indicatorSize!).width,
+            height: (navigationDrawerTheme.indicatorSize ?? defaults.indicatorSize!).height,
+          ),
+          Row(
+            children: <Widget>[
+              const SizedBox(width: 16),
+              buildIcon(context),
+              const SizedBox(width: 12),
+              buildLabel(context),
+            ],
+          ),
+        ],
+      ),
     );
 
-    return Container(
+    final Widget destination = Padding(
       padding: info.tilePadding,
-      color: backgroundColor ?? navigationDrawerTheme.backgroundColor,
       child: _NavigationDestinationSemantics(
         child: SizedBox(
           height: navigationDrawerTheme.tileHeight ?? defaults.tileHeight,
-          child: InkWell(
-            highlightColor: Colors.transparent,
-            onTap: enabled ? info.onTap : null,
-            customBorder: info.indicatorShape ?? navigationDrawerTheme.indicatorShape ?? defaults.indicatorShape!,
-            child: Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                NavigationIndicator(
-                  animation: info.selectedAnimation,
-                  color: info.indicatorColor ?? navigationDrawerTheme.indicatorColor ?? defaults.indicatorColor!,
-                  shape: info.indicatorShape ?? navigationDrawerTheme.indicatorShape ?? defaults.indicatorShape!,
-                  width: (navigationDrawerTheme.indicatorSize ?? defaults.indicatorSize!).width,
-                  height: (navigationDrawerTheme.indicatorSize ?? defaults.indicatorSize!).height,
-                ),
-                destinationBody
-              ],
-            ),
-          ),
+          child: inkWell,
         ),
       ),
     );
+
+    if (backgroundColor != null) {
+      return Ink(color: backgroundColor, child: destination);
+    }
+    return destination;
   }
 }
 

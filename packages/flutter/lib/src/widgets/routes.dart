@@ -213,6 +213,23 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   /// It defaults to `true`.
   bool willDisposeAnimationController = true;
 
+  /// Returns true if the transition has completed.
+  ///
+  /// It is equivalent to whether the future returned by [completed] has
+  /// completed.
+  ///
+  /// This method only works if assert is enabled. Otherwise it always returns
+  /// false.
+  @protected
+  bool debugTransitionCompleted() {
+    bool disposed = false;
+    assert(() {
+      disposed = _transitionCompleter.isCompleted;
+      return true;
+    }());
+    return disposed;
+  }
+
   /// Called to create the animation controller that will drive the transitions to
   /// this route from the previous one, and back to the previous route from this
   /// one.
@@ -220,10 +237,9 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   /// The returned controller will be disposed by [AnimationController.dispose]
   /// if the [willDisposeAnimationController] is `true`.
   AnimationController createAnimationController() {
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     final Duration duration = transitionDuration;
     final Duration reverseDuration = reverseTransitionDuration;
-    assert(duration >= Duration.zero);
     return AnimationController(
       duration: duration,
       reverseDuration: reverseDuration,
@@ -236,9 +252,42 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   /// the transition controlled by the animation controller created by
   /// [createAnimationController()].
   Animation<double> createAnimation() {
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     assert(_controller != null);
     return _controller!.view;
+  }
+
+  Simulation? _simulation;
+
+  /// Creates the simulation that drives the transition animation for this route.
+  ///
+  /// By default, this method returns null, indicating that the route doesn't
+  /// use simulations, but initiates the transition by calling either
+  /// [AnimationController.forward] or [AnimationController.reverse] with
+  /// [transitionDuration] and the controller's curve.
+  ///
+  /// Subclasses can override this method to return a non-null [Simulation]. In
+  /// this case, the [controller] will instead use the provided simulation to
+  /// animate the transition using [AnimationController.animateWith] or
+  /// [AnimationController.animateBackWith], and the [Simulation.x] is forwarded
+  /// to the value of [animation]. The [controller]'s curve and
+  /// [transitionDuration] are ignored.
+  ///
+  /// This method is invoked each time the navigator pushes or pops this route.
+  /// The `forward` parameter indicates the direction of the transition: true when
+  /// the route is pushed, and false when it is popped.
+  Simulation? createSimulation({ required bool forward }) {
+    assert(transitionDuration >= Duration.zero,
+        'The `duration` must be positive for a non-simulation animation. Received $transitionDuration.');
+    return null;
+  }
+  Simulation? _createSimulationAndVerify({ required bool forward }) {
+    final Simulation? simulation = createSimulation(forward: forward);
+    assert(transitionDuration >= Duration.zero,
+        "The `duration` must be positive for an animation that doesn't use simulation. "
+        'Either set `transitionDuration` or set `createSimulation`. '
+        'Received $transitionDuration.');
+    return simulation;
   }
 
   T? _result;
@@ -275,7 +324,7 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
 
   @override
   void install() {
-    assert(!_transitionCompleter.isCompleted, 'Cannot install a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot install a $runtimeType after disposing it.');
     _controller = createAnimationController();
     assert(_controller != null, '$runtimeType.createAnimationController() returned null.');
     _animation = createAnimation()
@@ -290,15 +339,20 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   @override
   TickerFuture didPush() {
     assert(_controller != null, '$runtimeType.didPush called before calling install() or after calling dispose().');
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     super.didPush();
-    return _controller!.forward();
+    _simulation = _createSimulationAndVerify(forward: true);
+    if (_simulation == null) {
+      return _controller!.forward();
+    } else {
+      return _controller!.animateWith(_simulation!);
+    }
   }
 
   @override
   void didAdd() {
     assert(_controller != null, '$runtimeType.didPush called before calling install() or after calling dispose().');
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     super.didAdd();
     _controller!.value = _controller!.upperBound;
   }
@@ -306,7 +360,7 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   @override
   void didReplace(Route<dynamic>? oldRoute) {
     assert(_controller != null, '$runtimeType.didReplace called before calling install() or after calling dispose().');
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     if (oldRoute is TransitionRoute) {
       _controller!.value = oldRoute._controller!.value;
     }
@@ -318,14 +372,19 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
     assert(_controller != null, '$runtimeType.didPop called before calling install() or after calling dispose().');
     assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
     _result = result;
-    _controller!.reverse();
+    _simulation = _createSimulationAndVerify(forward: false);
+    if (_simulation == null) {
+      _controller!.reverse();
+    } else {
+      _controller!.animateBackWith(_simulation!);
+    }
     return super.didPop(result);
   }
 
   @override
   void didPopNext(Route<dynamic> nextRoute) {
     assert(_controller != null, '$runtimeType.didPopNext called before calling install() or after calling dispose().');
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     _updateSecondaryAnimation(nextRoute);
     super.didPopNext(nextRoute);
   }
@@ -333,7 +392,7 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   @override
   void didChangeNext(Route<dynamic>? nextRoute) {
     assert(_controller != null, '$runtimeType.didChangeNext called before calling install() or after calling dispose().');
-    assert(!_transitionCompleter.isCompleted, 'Cannot reuse a $runtimeType after disposing it.');
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
     _updateSecondaryAnimation(nextRoute);
     super.didChangeNext(nextRoute);
   }
@@ -562,6 +621,7 @@ abstract class TransitionRoute<T> extends OverlayRoute<T> implements PredictiveB
   @override
   void dispose() {
     assert(!_transitionCompleter.isCompleted, 'Cannot dispose a $runtimeType twice.');
+    assert(!debugTransitionCompleted(), 'Cannot dispose a $runtimeType twice.');
     _animation?.removeStatusListener(_handleStatusChanged);
     _performanceModeRequestHandle?.dispose();
     _performanceModeRequestHandle = null;
@@ -1078,7 +1138,7 @@ class _ModalScopeState<T> extends State<_ModalScope<T>> {
                         child: ListenableBuilder(
                           listenable: _listenable, // immutable
                           builder: (BuildContext context, Widget? child) {
-                            return widget.route.buildTransitions(
+                            return widget.route._buildFlexibleTransitions(
                               context,
                               widget.route.animation!,
                               widget.route.secondaryAnimation!,
@@ -1415,6 +1475,77 @@ abstract class ModalRoute<T> extends TransitionRoute<T> with LocalHistoryRoute<T
     Widget child,
   ) {
     return child;
+  }
+
+  /// The [DelegatedTransitionBuilder] provided to the route below this one in the
+  /// navigation stack.
+  ///
+  /// {@template flutter.widgets.delegatedTransition}
+  /// Used for the purposes of coordinating transitions between two routes with
+  /// different route transitions. When a route is added to the stack, the original
+  /// topmost route will look for this transition, and if available, it will use
+  /// the `delegatedTransition` from the incoming transition to animate off the
+  /// screen.
+  ///
+  /// If the return of the [DelegatedTransitionBuilder] is null, then by default
+  /// the original transition of the routes will be used. This is useful if a
+  /// route can conditionally provide a transition based on the [BuildContext].
+  /// {@endtemplate}
+  ///
+  /// The [ModalRoute] receiving this transition will set it to their
+  /// [receivedTransition] property.
+  ///
+  /// {@tool dartpad}
+  /// This sample shows an app that uses three different page transitions, a
+  /// Material Zoom transition, the standard Cupertino sliding transition, and a
+  /// custom vertical transition. All of the page routes are able to inform the
+  /// previous page how to transition off the screen to sync with the new page.
+  ///
+  /// ** See code in examples/api/lib/widgets/routes/flexible_route_transitions.0.dart **
+  /// {@end-tool}
+  ///
+  /// {@tool dartpad}
+  /// This sample shows an app that uses the same transitions as the previous
+  /// sample, this time in a [MaterialApp.router].
+  ///
+  /// ** See code in examples/api/lib/widgets/routes/flexible_route_transitions.1.dart **
+  /// {@end-tool}
+  DelegatedTransitionBuilder? get delegatedTransition => null;
+
+  /// The [DelegatedTransitionBuilder] received from the route above this one in
+  /// the navigation stack.
+  ///
+  /// {@macro flutter.widgets.delegatedTransition}
+  ///
+  /// The `receivedTransition` will use the above route's [delegatedTransition] in
+  /// order to show the right route transition when the above route either enters
+  /// or leaves the navigation stack. If not null, the `receivedTransition` will
+  /// wrap the route content.
+  @visibleForTesting
+  DelegatedTransitionBuilder? receivedTransition;
+
+  // Wraps the transitions of this route with a DelegatedTransitionBuilder, when
+  // _receivedTransition is not null.
+  Widget _buildFlexibleTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (receivedTransition == null) {
+      return buildTransitions(context, animation, secondaryAnimation, child);
+    }
+
+    // Create a static proxy animation to suppress the original secondary transition.
+    final ProxyAnimation proxyAnimation = ProxyAnimation();
+
+    final Widget proxiedOriginalTransitions = buildTransitions(context, animation, proxyAnimation, child);
+
+    // If receivedTransitions return null, then we want to return the original transitions,
+    // but with the secondary animation still proxied. This keeps a desynched
+    // animation from playing.
+    return receivedTransition!(context, animation, secondaryAnimation, allowSnapshotting, proxiedOriginalTransitions) ??
+      proxiedOriginalTransitions;
   }
 
   @override
@@ -1933,12 +2064,22 @@ abstract class ModalRoute<T> extends TransitionRoute<T> with LocalHistoryRoute<T
 
   @override
   void didChangeNext(Route<dynamic>? nextRoute) {
+    if (nextRoute is ModalRoute<T> && canTransitionTo(nextRoute) && nextRoute.delegatedTransition != this.delegatedTransition) {
+      receivedTransition = nextRoute.delegatedTransition;
+    } else {
+      receivedTransition = null;
+    }
     super.didChangeNext(nextRoute);
     changedInternalState();
   }
 
   @override
   void didPopNext(Route<dynamic> nextRoute) {
+    if (nextRoute is ModalRoute<T> && canTransitionTo(nextRoute) && nextRoute.delegatedTransition != this.delegatedTransition) {
+      receivedTransition = nextRoute.delegatedTransition;
+    } else {
+      receivedTransition = null;
+    }
     super.didPopNext(nextRoute);
     changedInternalState();
     _maybeDispatchNavigationNotification();

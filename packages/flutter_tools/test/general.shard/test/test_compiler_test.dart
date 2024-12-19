@@ -9,6 +9,8 @@ import 'package:flutter_tools/src/base/logger.dart';
 import 'package:flutter_tools/src/base/platform.dart';
 import 'package:flutter_tools/src/build_info.dart';
 import 'package:flutter_tools/src/compile.dart';
+import 'package:flutter_tools/src/dart/pub.dart';
+import 'package:flutter_tools/src/features.dart';
 import 'package:flutter_tools/src/project.dart';
 import 'package:flutter_tools/src/test/test_compiler.dart';
 import 'package:flutter_tools/src/test/test_time_recorder.dart';
@@ -17,6 +19,8 @@ import 'package:test/fake.dart';
 
 import '../../src/common.dart';
 import '../../src/context.dart';
+import '../../src/fake_pub_deps.dart';
+import '../../src/fakes.dart';
 import '../../src/logging_logger.dart';
 
 final Platform linuxPlatform = FakePlatform(
@@ -38,11 +42,20 @@ void main() {
   late FileSystem fileSystem;
   late LoggingLogger logger;
 
+  // TODO(matanlurey): Remove after `explicit-package-dependencies` is enabled by default.
+  // See https://github.com/flutter/flutter/issues/160257 for details.
+  FeatureFlags enableExplicitPackageDependencies() {
+    return TestFeatureFlags(isExplicitPackageDependenciesEnabled: true);
+  }
+
   setUp(() {
     fileSystem = MemoryFileSystem.test();
     fileSystem.file('pubspec.yaml').createSync();
     fileSystem.file('test/foo.dart').createSync(recursive: true);
-    fileSystem.file('.packages').createSync();
+    fileSystem
+      .directory('.dart_tool')
+      .childFile('package_config.json')
+      .createSync(recursive: true);
     residentCompiler = FakeResidentCompiler(fileSystem);
     logger = LoggingLogger();
   });
@@ -61,6 +74,8 @@ void main() {
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => BufferLogger.test(),
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 
   testUsingContext('TestCompiler does not try to cache the dill file when precompiled dill is passed', () async {
@@ -78,6 +93,8 @@ void main() {
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => BufferLogger.test(),
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 
   testUsingContext('TestCompiler reports null when a compile fails', () async {
@@ -95,6 +112,8 @@ void main() {
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => BufferLogger.test(),
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 
 
@@ -123,6 +142,8 @@ void main() {
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => logger,
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 
   testUsingContext('TestCompiler disposing test compiler shuts down backing compiler', () async {
@@ -144,6 +165,8 @@ void main() {
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => BufferLogger.test(),
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 
   testUsingContext('TestCompiler updates dart_plugin_registrant.dart', () async {
@@ -155,7 +178,22 @@ dependencies:
     sdk: flutter
   a_plugin: 1.0.0
 ''');
-      fileSystem.file('.packages').writeAsStringSync('a_plugin:/a_plugin/lib/');
+    fileSystem
+      .directory('.dart_tool')
+      .childFile('package_config.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "a_plugin",
+      "rootUri": "/a_plugin/",
+      "packageUri": "lib/"
+    }
+  ]
+}
+''');
       fakeDartPlugin.childFile('pubspec.yaml')
           ..createSync(recursive: true)
           ..writeAsStringSync('''
@@ -167,7 +205,7 @@ flutter:
       linux:
         dartPluginClass: APlugin
 environment:
-  sdk: '>=3.2.0-0 <4.0.0'
+  sdk: ^3.7.0-0
   flutter: ">=2.5.0"
 ''');
 
@@ -194,6 +232,8 @@ environment:
     Platform: () => linuxPlatform,
     ProcessManager: () => FakeProcessManager.any(),
     Logger: () => BufferLogger.test(),
+    FeatureFlags: enableExplicitPackageDependencies,
+    Pub: FakePubWithPrimedDeps.new,
   });
 }
 

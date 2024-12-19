@@ -20,6 +20,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -161,7 +162,24 @@ mixin CupertinoRouteTransitionMixin<T> on PageRoute<T> {
   @override
   bool canTransitionTo(TransitionRoute<dynamic> nextRoute) {
     // Don't perform outgoing animation if the next route is a fullscreen dialog.
-    return nextRoute is CupertinoRouteTransitionMixin && !nextRoute.fullscreenDialog;
+    final bool nextRouteIsNotFullscreen = (nextRoute is! PageRoute<T>) || !nextRoute.fullscreenDialog;
+
+    // If the next route has a delegated transition, then this route is able to
+    // use that delegated transition to smoothly sync with the next route's
+    // transition.
+    final bool nextRouteHasDelegatedTransition = nextRoute is ModalRoute<T>
+      && nextRoute.delegatedTransition != null;
+
+    // Otherwise if the next route has the same route transition mixin as this
+    // one, then this route will already be synced with its transition.
+    return nextRouteIsNotFullscreen &&
+      ((nextRoute is CupertinoRouteTransitionMixin) || nextRouteHasDelegatedTransition);
+  }
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) {
+    // Supress previous route from transitioning if this is a fullscreenDialog route.
+    return previousRoute is PageRoute && !fullscreenDialog;
   }
 
   @override
@@ -286,6 +304,9 @@ class CupertinoPageRoute<T> extends PageRoute<T> with CupertinoRouteTransitionMi
     assert(opaque);
   }
 
+  @override
+  DelegatedTransitionBuilder? get delegatedTransition => CupertinoPageTransition.delegatedTransition;
+
   /// Builds the primary contents of the route.
   final WidgetBuilder builder;
 
@@ -313,6 +334,9 @@ class _PageBasedCupertinoPageRoute<T> extends PageRoute<T> with CupertinoRouteTr
   }) : super(settings: page) {
     assert(opaque);
   }
+
+  @override
+  DelegatedTransitionBuilder? get delegatedTransition => this.fullscreenDialog ? null : CupertinoPageTransition.delegatedTransition;
 
   CupertinoPage<T> get _page => settings as CupertinoPage<T>;
 
@@ -414,6 +438,30 @@ class CupertinoPageTransition extends StatefulWidget {
   ///  * `linearTransition` is whether to perform the transitions linearly.
   ///    Used to precisely track back gesture drags.
   final bool linearTransition;
+
+  /// The Cupertino styled [DelegatedTransitionBuilder] provided to the previous
+  /// route.
+  ///
+  /// {@macro flutter.widgets.delegatedTransition}
+  static Widget? delegatedTransition(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, bool allowSnapshotting, Widget? child) {
+    final CurvedAnimation animation = CurvedAnimation(
+        parent: secondaryAnimation,
+        curve: Curves.linearToEaseOut,
+        reverseCurve: Curves.easeInToLinear,
+      );
+    final Animation<Offset> delegatedPositionAnimation =
+      animation.drive(_kMiddleLeftTween);
+    animation.dispose();
+
+    assert(debugCheckHasDirectionality(context));
+    final TextDirection textDirection = Directionality.of(context);
+    return SlideTransition(
+      position: delegatedPositionAnimation,
+      textDirection: textDirection,
+      transformHitTests: false,
+      child: child,
+    );
+  }
 
   @override
   State<CupertinoPageTransition> createState() => _CupertinoPageTransitionState();
@@ -1018,6 +1066,30 @@ class _CupertinoEdgeShadowPainter extends BoxPainter {
   }
 }
 
+// The stiffness used by dialogs and action sheets.
+//
+// The stiffness value is obtained by examining the properties of
+// `CASpringAnimation` in Xcode. The damping value is derived similarly, with
+// additional precision calculated based on `_kStandardStiffness` to ensure a
+// damping ratio of 1 (critically damped): damping = 2 * sqrt(stiffness)
+const double _kStandardStiffness = 522.35;
+const double _kStandardDamping = 45.7099552;
+const SpringDescription _kStandardSpring = SpringDescription(
+  mass: 1,
+  stiffness: _kStandardStiffness,
+  damping: _kStandardDamping,
+);
+// The iOS spring animation duration is 0.404 seconds, based on the properties
+// of `CASpringAnimation` in Xcode. At this point, the spring's position
+// `x(0.404)` is approximately 0.9990000, suggesting that iOS uses a position
+// tolerance of 1e-3 (matching the default `_epsilonDefault` value).
+//
+// However, the spring's velocity `dx(0.404)` is about 0.02, indicating that iOS
+// may not consider velocity when determining the animation's end condition. To
+// account for this, a larger velocity tolerance is applied here for added
+// safety.
+const Tolerance _kStandardTolerance = Tolerance(velocity: 0.03);
+
 /// A route that shows a modal iOS-style popup that slides up from the
 /// bottom of the screen.
 ///
@@ -1097,29 +1169,21 @@ class CupertinoModalPopupRoute<T> extends PopupRoute<T> {
   @override
   Duration get transitionDuration => _kModalPopupTransitionDuration;
 
-  CurvedAnimation? _animation;
-
-  late Tween<Offset> _offsetTween;
-
   /// {@macro flutter.widgets.DisplayFeatureSubScreen.anchorPoint}
   final Offset? anchorPoint;
 
   @override
-  Animation<double> createAnimation() {
-    assert(_animation == null);
-    _animation = CurvedAnimation(
-      parent: super.createAnimation(),
-
-      // These curves were initially measured from native iOS horizontal page
-      // route animations and seemed to be a good match here as well.
-      curve: Curves.linearToEaseOut,
-      reverseCurve: Curves.linearToEaseOut.flipped,
+  Simulation createSimulation({ required bool forward }) {
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
+    final double end = forward ? 1.0 : 0.0;
+    return SpringSimulation(
+      _kStandardSpring,
+      controller!.value,
+      end,
+      0,
+      tolerance: _kStandardTolerance,
+      snapToEnd: true,
     );
-    _offsetTween = Tween<Offset>(
-      begin: const Offset(0.0, 1.0),
-      end: Offset.zero,
-    );
-    return _animation!;
   }
 
   @override
@@ -1138,17 +1202,16 @@ class CupertinoModalPopupRoute<T> extends PopupRoute<T> {
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionalTranslation(
-        translation: _offsetTween.evaluate(_animation!),
+        translation: _offsetTween.evaluate(animation),
         child: child,
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _animation?.dispose();
-    super.dispose();
-  }
+  static final Tween<Offset> _offsetTween = Tween<Offset>(
+    begin: const Offset(0.0, 1.0),
+    end: Offset.zero,
+  );
 }
 
 /// Shows a modal iOS-style popup that slides up from the bottom of the screen.
@@ -1238,12 +1301,6 @@ Future<T?> showCupertinoModalPopup<T>({
     ),
   );
 }
-
-// The curve and initial scale values were mostly eyeballed from iOS, however
-// they reuse the same animation curve that was modeled after native page
-// transitions.
-final Animatable<double> _dialogScaleTween = Tween<double>(begin: 1.3, end: 1.0)
-  .chain(CurveTween(curve: Curves.linearToEaseOut));
 
 Widget _buildCupertinoDialogTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
   return child;
@@ -1392,33 +1449,36 @@ class CupertinoDialogRoute<T> extends RawDialogRoute<T> {
   CurvedAnimation? _fadeAnimation;
 
   @override
-  Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
+  Simulation createSimulation({ required bool forward }) {
+    assert(!debugTransitionCompleted(), 'Cannot reuse a $runtimeType after disposing it.');
+    final double end = forward ? 1.0 : 0.0;
+    return SpringSimulation(
+      _kStandardSpring,
+      controller!.value,
+      end,
+      0,
+      tolerance: _kStandardTolerance,
+      snapToEnd: true,
+    );
+  }
 
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
     if (transitionBuilder != null) {
       return super.buildTransitions(context, animation, secondaryAnimation, child);
     }
 
-    if (_fadeAnimation?.parent != animation) {
-      _fadeAnimation?.dispose();
-      _fadeAnimation = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeInOut,
-      );
-    }
-
-    final CurvedAnimation fadeAnimation = _fadeAnimation!;
-
     if (animation.status == AnimationStatus.reverse) {
       return FadeTransition(
-        opacity: fadeAnimation,
-        child: super.buildTransitions(context, animation, secondaryAnimation, child),
+        opacity: animation,
+        child: child,
       );
     }
     return FadeTransition(
-      opacity: fadeAnimation,
+      opacity: animation,
       child: ScaleTransition(
         scale: animation.drive(_dialogScaleTween),
-        child: super.buildTransitions(context, animation, secondaryAnimation, child),
+        child: child,
       ),
     );
   }
@@ -1428,4 +1488,9 @@ class CupertinoDialogRoute<T> extends RawDialogRoute<T> {
     _fadeAnimation?.dispose();
     super.dispose();
   }
+
+  // The curve and initial scale values were mostly eyeballed from iOS, however
+  // they reuse the same animation curve that was modeled after native page
+  // transitions.
+  static final Tween<double> _dialogScaleTween = Tween<double>(begin: 1.3, end: 1.0);
 }

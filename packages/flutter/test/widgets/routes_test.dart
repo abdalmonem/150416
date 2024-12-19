@@ -5,7 +5,9 @@
 import 'dart:collection';
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -1472,6 +1474,160 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.byKey(containerKey), findsNothing);
     });
+
+    testWidgets('Routes can use simulation and ignore durations', (WidgetTester tester) async {
+      final GlobalKey containerKey = GlobalKey();
+
+      await tester.pumpWidget(MaterialApp(
+        onGenerateRoute: (RouteSettings settings) {
+          return MaterialPageRoute<dynamic>(
+            builder: (BuildContext context) {
+              return ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push<void>(
+                    _SimulationRoute(
+                      simulationBuilder: ({required double current, required bool forward}) {
+                        // This simulation takes 1.0 second to transit.
+                        return GravitySimulation(
+                          0, // Acceleration
+                          0.0, // Start position
+                          1.0, // End distance
+                          1.0); // Init velocity
+                      },
+                      // Set an extremely long duration so that the route must ignore these
+                      // durations to proceed.
+                      transitionDuration: const Duration(days: 1),
+                      reverseTransitionDuration: const Duration(days: 1),
+                      pageBuilder: (_, Animation<double> animation, Animation<double> secondaryAnimation) {
+                        return Container(
+                          key: containerKey,
+                          color: Colors.green,
+                        );
+                      },
+                      transitionBuilder: (BuildContext context, Animation<double> animation, Widget child) {
+                        return child;
+                      }
+                    ),
+                  );
+                },
+                child: const Text('Open page'),
+              );
+            },
+          );
+        },
+      ));
+
+      // Open the new route.
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Open page'), findsNothing);
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      await tester.pumpAndSettle();
+
+      // Pop the new route.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pump();
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      // Container should be present halfway through the transition.
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      // Container should be present at the very end of the transition.
+      await tester.pump(const Duration(milliseconds: 490));
+      expect(find.byKey(containerKey), findsOneWidget);
+
+      // Container have transitioned out after 500ms.
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(containerKey), findsNothing);
+    });
+
+    testWidgets('Routes can use simulation value', (WidgetTester tester) async {
+      final GlobalKey containerKey = GlobalKey();
+
+      await tester.pumpWidget(MaterialApp(
+        onGenerateRoute: (RouteSettings settings) {
+          return MaterialPageRoute<dynamic>(
+            builder: (BuildContext context) {
+              return ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push<void>(
+                    _SimulationRoute(
+                      simulationBuilder: ({required double current, required bool forward}) {
+                        return _ConstantVelocitySimulation(forward: forward, speed: 1.0); // Init velocity
+                      },
+                      transitionDuration: const Duration(days: 1),
+                      reverseTransitionDuration: const Duration(days: 1),
+                      pageBuilder: (_, Animation<double> animation, Animation<double> secondaryAnimation) {
+                        return Container(
+                          key: containerKey,
+                          color: Colors.green,
+                        );
+                      },
+                      transitionBuilder: (BuildContext context, Animation<double> animation, Widget child) {
+                        return FractionalTranslation(
+                          translation: Tween<Offset>(begin: const Offset(0.0, 1.0), end: Offset.zero)
+                            .evaluate(animation),
+                          child: child, // child is the value returned by pageBuilder
+                        );
+                      }
+                    ),
+                  );
+                },
+                child: const Text('Open page'),
+              );
+            },
+          );
+        },
+      ));
+
+      // Open the new route.
+      await tester.tap(find.byType(ElevatedButton));
+      // Must pump two frames for the animation to take effect. The first pump
+      // starts the animation, the 2nd pump makes the wiget appear.
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), const Offset(0, 600));
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), const Offset(0, 300));
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), Offset.zero);
+
+      await tester.pumpAndSettle();
+
+      // Pop the new route.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), Offset.zero);
+
+      // Container should be present halfway through the transition.
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), const Offset(0, 300));
+
+      // Container should be present at the very end of the transition.
+      await tester.pump(const Duration(milliseconds: 490));
+      expect(find.byKey(containerKey), findsOneWidget);
+      expect(tester.getTopLeft(find.byKey(containerKey)), const Offset(0, 594));
+
+      // Container have transitioned out after 500ms.
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(containerKey), findsNothing);
+    });
   });
 
   group('ModalRoute', () {
@@ -1918,6 +2074,336 @@ void main() {
       expect(modalRoute, isNotNull);
       expect(modalRoute!.requestFocus, isFalse);
     });
+
+    testWidgets('outgoing route receives a delegated transition from the new route', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+      final MaterialPageRoute<void> materialPageRoute = MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return Scaffold(
+            body: TextButton(
+              onPressed: () {
+                final CupertinoPageRoute<void> route = CupertinoPageRoute<void>(
+                  builder: (BuildContext context) {
+                    return  const Text('Cupertino Transition');
+                  }
+                );
+                Navigator.of(context).push(route);
+              },
+              child: const Text('Cupertino Transition'),
+            ),
+          );
+        }
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: ThemeData(
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+              TargetPlatform.android: ZoomPageTransitionsBuilder(),
+            },
+          ),
+        ),
+        home: Scaffold(
+          body: TextButton(
+            onPressed: () {
+              navigatorKey.currentState!.push<void>(materialPageRoute);
+            },
+            child: const Text('Material Route Transition'),
+          ),
+        ),
+        )
+      );
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Material Route Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cupertino Transition'), findsOneWidget);
+      expect(find.text('Material Route Transition'), findsNothing);
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Cupertino Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, isNotNull);
+      expect(materialPageRoute.receivedTransition, CupertinoPageTransition.delegatedTransition);
+    });
+
+    testWidgets('outgoing route does not receive a delegated transition from a route with the same transition', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+      final MaterialPageRoute<void> materialPageRoute = MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return Scaffold(
+            body: TextButton(
+              onPressed: () {
+                final MaterialPageRoute<void> route = MaterialPageRoute<void>(
+                  builder: (BuildContext context) {
+                    return  const Text('Page 3');
+                  }
+                );
+                Navigator.of(context).push(route);
+              },
+              child: const Text('Second Material Transition'),
+            ),
+          );
+        }
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: ThemeData(
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+              TargetPlatform.android: ZoomPageTransitionsBuilder(),
+            },
+          ),
+        ),
+        home: Scaffold(
+          body: TextButton(
+            onPressed: () {
+              navigatorKey.currentState!.push<void>(materialPageRoute);
+            },
+            child: const Text('Material Route Transition'),
+          ),
+        ),
+        )
+      );
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Material Route Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Second Material Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, null);
+    });
+
+    testWidgets('outgoing route does not receive a delegated transition from a route with the same un-snapshotted transition', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+      final MaterialPageRoute<void> materialPageRoute = MaterialPageRoute<void>(
+        allowSnapshotting: false,
+        builder: (BuildContext context) {
+          return Scaffold(
+            body: TextButton(
+              onPressed: () {
+                final MaterialPageRoute<void> route = MaterialPageRoute<void>(
+                  allowSnapshotting: false,
+                  builder: (BuildContext context) {
+                    return  const Text('Page 3');
+                  }
+                );
+                Navigator.of(context).push(route);
+              },
+              child: const Text('Second Material Transition'),
+            ),
+          );
+        }
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: ThemeData(
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+              TargetPlatform.android: ZoomPageTransitionsBuilder(),
+            },
+          ),
+        ),
+        home: Scaffold(
+          body: TextButton(
+            onPressed: () {
+              navigatorKey.currentState!.push<void>(materialPageRoute);
+            },
+            child: const Text('Material Route Transition'),
+          ),
+        ),
+        )
+      );
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Material Route Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      await tester.tap(find.text('Second Material Transition'));
+
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, null);
+
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+
+      expect(materialPageRoute.receivedTransition, null);
+    });
+
+    testWidgets('a received transition animates the same as a non-received transition', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+      const Key firstPlaceholderKey = Key('First Placeholder');
+      const Key secondPlaceholderKey = Key('Second Placeholder');
+
+      final CupertinoPageRoute<void> cupertinoPageRoute = CupertinoPageRoute<void>(
+        builder: (BuildContext context) {
+          return Column(
+            children: <Widget>[
+              const Placeholder(key: secondPlaceholderKey),
+              TextButton(
+                onPressed: () {
+                  final CupertinoPageRoute<void> route = CupertinoPageRoute<void>(
+                    builder: (BuildContext context) {
+                      return  Column(
+                        children: <Widget>[
+                          TextButton(
+                            onPressed: () {},
+                            child: const Text('Page 3')
+                          ),
+                        ],
+                      );
+                    }
+                  );
+                  Navigator.of(context).push(route);
+                },
+                child: const Text('Second Cupertino Transition'),
+              ),
+            ],
+          );
+        }
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: ThemeData(
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+              TargetPlatform.android: ZoomPageTransitionsBuilder(),
+            },
+          ),
+        ),
+        home: Column(
+          children: <Widget>[
+            const Placeholder(key: firstPlaceholderKey),
+            TextButton(
+              onPressed: () {
+                navigatorKey.currentState!.push<void>(cupertinoPageRoute);
+              },
+              child: const Text('First Cupertino Transition'),
+            ),
+          ]
+        ),
+        )
+      );
+
+      // Start first page transition. This one will be playing the delegated transition
+      // received from Cupertino page route.
+      await tester.tap(find.text('First Cupertino Transition'));
+
+      await tester.pump();
+
+      // Save the position of element on the screen at certain intervals
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalOne = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalTwo =  tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalThree = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalFour = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalFive = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalSix = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalSeven = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalEight = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalNine = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 40));
+      final double xLocationIntervalTen = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 50));
+      final double xLocationIntervalEleven = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      await tester.pump(const Duration(milliseconds: 50));
+      final double xLocationIntervalTwelve = tester.getTopLeft(find.byKey(firstPlaceholderKey)).dx;
+
+      // Give time to the animation to finish
+      await tester.pumpAndSettle(const Duration(milliseconds: 1));
+
+      // Start the second page transition. This time it's the default secondary
+      // transition of a Cupertino page, with no delegation.
+      await tester.tap(find.text('Second Cupertino Transition'));
+
+      await tester.pump();
+
+      // Compare against the values from before.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalOne, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalTwo, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalThree, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalFour, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalFive, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalSix, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalSeven, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalEight, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalNine, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalTen, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalEleven, epsilon: 0.1));
+
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(tester.getTopLeft(find.byKey(secondPlaceholderKey)).dx, moreOrLessEquals(xLocationIntervalTwelve, epsilon: 0.1));
+    });
   });
 
   testWidgets('can be dismissed with escape keyboard shortcut', (WidgetTester tester) async {
@@ -2269,6 +2755,7 @@ class WidgetWithNoLocalHistoryState extends State<WidgetWithNoLocalHistory> {
   }
 }
 
+@pragma('vm:entry-point')
 class _RestorableDialogTestWidget extends StatelessWidget {
   const _RestorableDialogTestWidget();
 
@@ -2297,5 +2784,60 @@ class _RestorableDialogTestWidget extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+typedef _SimulationBuilder = Simulation Function({ required double current, required bool forward });
+typedef _TransitionBuilder = Widget Function(BuildContext context, Animation<double> animation, Widget child);
+
+// A route that is driven by a simulation.
+class _SimulationRoute extends PageRouteBuilder<void> {
+  _SimulationRoute({
+    required this.simulationBuilder,
+    required this.transitionBuilder,
+    required super.pageBuilder,
+    super.transitionDuration = const Duration(milliseconds: 300),
+    super.reverseTransitionDuration = const Duration(milliseconds: 300),
+  });
+
+  final _SimulationBuilder simulationBuilder;
+  final _TransitionBuilder transitionBuilder;
+
+  @override
+  Simulation createSimulation({ required bool forward }) {
+    return simulationBuilder(current: controller!.value, forward: forward);
+  }
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
+    return transitionBuilder(context, animation, child);
+  }
+}
+
+// A simulation that progresses at a constant speed.
+//
+// If `forward` is true, the simulation goes from 0 to 1, otherwise from 1 to 0.
+class _ConstantVelocitySimulation extends Simulation {
+  _ConstantVelocitySimulation({
+    required this.forward,
+    required this.speed,
+  }) : _start = forward ? 0.0 : 1.0;
+
+  final bool forward;
+  final double speed;
+  final double _start;
+
+  @override
+  double x(double time) {
+    return _start + time * dx(time);
+  }
+
+  @override
+  double dx(double time) => forward ? speed : -speed;
+
+  @override
+  bool isDone(double time) {
+    final double nowX = x(time);
+    return nowX > 1.0 || nowX < 0;
   }
 }

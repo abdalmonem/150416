@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'package:file/file.dart';
 import 'package:file/memory.dart';
 import 'package:flutter_tools/src/dart/package_map.dart';
+import 'package:flutter_tools/src/dart/pub.dart';
+import 'package:flutter_tools/src/features.dart';
 import 'package:flutter_tools/src/flutter_manifest.dart';
 import 'package:flutter_tools/src/flutter_plugins.dart';
 import 'package:flutter_tools/src/globals.dart' as globals;
@@ -19,8 +21,18 @@ import 'package:yaml/yaml.dart';
 
 import '../src/common.dart';
 import '../src/context.dart';
+import '../src/fake_pub_deps.dart';
+import '../src/fakes.dart';
 
 void main() {
+  // TODO(matanlurey): Remove after `explicit-package-dependencies` is enabled by default.
+  // See https://github.com/flutter/flutter/issues/160257 for details.
+  FeatureFlags enableExplicitPackageDependencies() {
+    return TestFeatureFlags(
+      isExplicitPackageDependenciesEnabled: true,
+    );
+  }
+
   group('Dart plugin registrant', () {
     late FileSystem fs;
     late FakeFlutterProject flutterProject;
@@ -64,6 +76,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -80,6 +93,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -92,6 +106,7 @@ void main() {
             'pluginName': 'url_launcher_linux',
             'dartClass': 'UrlLauncherPluginLinux',
             'platform': 'linux',
+            'dartFileName': 'url_launcher_linux.dart',
           })
         );
         expect(resolutions[1].toMap(), equals(
@@ -99,6 +114,7 @@ void main() {
             'pluginName': 'url_launcher_macos',
             'dartClass': 'UrlLauncherPluginMacOS',
             'platform': 'macos',
+            'dartFileName': 'url_launcher_macos.dart',
           })
         );
       });
@@ -128,6 +144,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -144,6 +161,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -157,6 +175,7 @@ void main() {
               'pluginName': 'url_launcher_macos',
               'dartClass': 'UrlLauncherPluginMacOS',
               'platform': 'macos',
+              'dartFileName': 'url_launcher_macos.dart',
             }));
       });
 
@@ -180,6 +199,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -196,6 +216,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -208,6 +229,7 @@ void main() {
             'pluginName': 'url_launcher_macos',
             'dartClass': 'UrlLauncherPluginMacOS',
             'platform': 'macos',
+            'dartFileName': 'url_launcher_macos.dart',
           })
         );
         expect(resolutions[1].toMap(), equals(
@@ -215,6 +237,7 @@ void main() {
             'pluginName': 'transitive_dependency_plugin',
             'dartClass': 'UrlLauncherPluginWindows',
             'platform': 'windows',
+            'dartFileName': 'transitive_dependency_plugin.dart',
           })
         );
       });
@@ -240,6 +263,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -251,6 +275,7 @@ void main() {
             'pluginName': 'url_launcher',
             'dartClass': 'UrlLauncherAndroid',
             'platform': 'android',
+            'dartFileName': 'url_launcher.dart',
           })
         );
         expect(resolutions[1].toMap(), equals(
@@ -258,6 +283,7 @@ void main() {
             'pluginName': 'url_launcher',
             'dartClass': 'UrlLauncherIos',
             'platform': 'ios',
+            'dartFileName': 'url_launcher.dart',
           })
         );
       });
@@ -288,6 +314,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -322,6 +349,7 @@ void main() {
               VersionConstraint.parse('>=2.10.0'),
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -355,6 +383,7 @@ void main() {
               VersionConstraint.parse('>=2.11.0'),
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -368,16 +397,19 @@ void main() {
               'pluginName': 'url_launcher',
               'dartClass': 'UrlLauncherLinux',
               'platform': 'linux',
+              'dartFileName': 'url_launcher.dart',
             },
             <String, String>{
               'pluginName': 'url_launcher',
               'dartClass': 'UrlLauncherMacOS',
               'platform': 'macos',
+              'dartFileName': 'url_launcher.dart',
             },
             <String, String>{
               'pluginName': 'url_launcher',
               'dartClass': 'UrlLauncherWindows',
               'platform': 'windows',
+              'dartFileName': 'url_launcher.dart',
             },
           ])
         );
@@ -401,6 +433,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             // Include three possible implementations, one before and one after
@@ -420,6 +453,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -436,6 +470,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -452,6 +487,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -463,6 +499,7 @@ void main() {
             'pluginName': 'url_launcher_linux',
             'dartClass': 'UrlLauncherPluginLinux',
             'platform': 'linux',
+            'dartFileName': 'url_launcher_linux.dart',
           })
         );
       });
@@ -485,6 +522,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -501,6 +539,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -512,6 +551,7 @@ void main() {
             'pluginName': 'url_launcher_linux',
             'dartClass': 'UrlLauncherPluginLinux',
             'platform': 'linux',
+            'dartFileName': 'url_launcher_linux.dart',
           })
         );
       });
@@ -537,6 +577,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -553,6 +594,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -569,6 +611,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -580,6 +623,7 @@ void main() {
             'pluginName': 'user_selected_url_launcher_implementation',
             'dartClass': 'UrlLauncherPluginLinux',
             'platform': 'linux',
+            'dartFileName': 'user_selected_url_launcher_implementation.dart',
           })
         );
       });
@@ -608,6 +652,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -624,6 +669,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -635,6 +681,7 @@ void main() {
               'pluginName': 'user_selected_url_launcher_implementation',
               'dartClass': 'UrlLauncherAndroid',
               'platform': 'android',
+              'dartFileName': 'user_selected_url_launcher_implementation.dart',
             })
         );
         expect(resolutions[1].toMap(), equals(
@@ -642,6 +689,7 @@ void main() {
               'pluginName': 'url_launcher',
               'dartClass': 'UrlLauncherIos',
               'platform': 'ios',
+              'dartFileName': 'url_launcher.dart',
             })
         );
       });
@@ -668,6 +716,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -684,6 +733,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -700,6 +750,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
             ],
@@ -742,6 +793,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -758,6 +810,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
             ],
@@ -795,6 +848,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -807,6 +861,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -841,6 +896,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -857,6 +913,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -884,6 +941,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
             Plugin.fromYaml(
@@ -900,6 +958,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -914,6 +973,7 @@ void main() {
               'pluginName': 'url_launcher_linux',
               'dartClass': 'UrlLauncherLinux',
               'platform': 'linux',
+              'dartFileName': 'url_launcher_linux.dart',
             })
         );
       });
@@ -936,6 +996,7 @@ void main() {
               null,
               <String>[],
               fileSystem: fs,
+              isDevDependency: false,
               appDependencies: directDependencies,
             ),
           ],
@@ -974,6 +1035,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -990,6 +1052,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
             ],
@@ -1034,6 +1097,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -1050,6 +1114,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -1066,6 +1131,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -1082,6 +1148,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
             ],
@@ -1126,6 +1193,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
               Plugin.fromYaml(
@@ -1142,6 +1210,7 @@ void main() {
                 null,
                 <String>[],
                 fileSystem: fs,
+                isDevDependency: false,
                 appDependencies: directDependencies,
               ),
             ],
@@ -1329,6 +1398,8 @@ void main() {
       }, overrides: <Type, Generator>{
         FileSystem: () => fs,
         ProcessManager: () => FakeProcessManager.any(),
+        FeatureFlags: enableExplicitPackageDependencies,
+        Pub: FakePubWithPrimedDeps.new,
       });
 
       testUsingContext('Plugin without platform support throws tool exit', () async {
@@ -1372,6 +1443,8 @@ void main() {
       }, overrides: <Type, Generator>{
         FileSystem: () => fs,
         ProcessManager: () => FakeProcessManager.any(),
+        FeatureFlags: enableExplicitPackageDependencies,
+        Pub: FakePubWithPrimedDeps.new,
       });
 
       testUsingContext('Plugin with platform support without dart plugin class throws tool exit', () async {
@@ -1414,6 +1487,8 @@ void main() {
       }, overrides: <Type, Generator>{
         FileSystem: () => fs,
         ProcessManager: () => FakeProcessManager.any(),
+        FeatureFlags: enableExplicitPackageDependencies,
+        Pub: FakePubWithPrimedDeps.new,
       });
 
       testUsingContext('Does not create new entrypoint if there are no platform resolutions', () async {
@@ -1438,6 +1513,8 @@ void main() {
       }, overrides: <Type, Generator>{
         FileSystem: () => fs,
         ProcessManager: () => FakeProcessManager.any(),
+        FeatureFlags: enableExplicitPackageDependencies,
+        Pub: FakePubWithPrimedDeps.new,
       });
 
       testUsingContext('Deletes new entrypoint if there are no platform resolutions', () async {
@@ -1492,6 +1569,8 @@ void main() {
       }, overrides: <Type, Generator>{
         FileSystem: () => fs,
         ProcessManager: () => FakeProcessManager.any(),
+        FeatureFlags: enableExplicitPackageDependencies,
+        Pub: FakePubWithPrimedDeps.new,
       });
     });
   });

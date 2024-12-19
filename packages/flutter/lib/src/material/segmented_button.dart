@@ -232,6 +232,10 @@ class SegmentedButton<T> extends StatefulWidget {
   /// Similarly, the [enabledMouseCursor] and [disabledMouseCursor]
   /// parameters are used to construct [ButtonStyle.mouseCursor].
   ///
+  /// The [iconColor], [disabledIconColor] are used to construct
+  /// [ButtonStyle.iconColor] and [iconSize] is used to construct
+  /// [ButtonStyle.iconSize].
+  ///
   /// All of the other parameters are either used directly or used to
   /// create a [WidgetStateProperty] with a single value for all
   /// states.
@@ -282,6 +286,9 @@ class SegmentedButton<T> extends StatefulWidget {
     Color? disabledBackgroundColor,
     Color? shadowColor,
     Color? surfaceTintColor,
+    Color? iconColor,
+    double? iconSize,
+    Color? disabledIconColor,
     Color? overlayColor,
     double? elevation,
     TextStyle? textStyle,
@@ -300,14 +307,6 @@ class SegmentedButton<T> extends StatefulWidget {
     AlignmentGeometry? alignment,
     InteractiveInkFeatureFactory? splashFactory,
   }) {
-    final MaterialStateProperty<Color?>? foregroundColorProp =
-      (foregroundColor == null && disabledForegroundColor == null && selectedForegroundColor == null)
-        ? null
-        : _SegmentButtonDefaultColor(foregroundColor, disabledForegroundColor, selectedForegroundColor);
-    final MaterialStateProperty<Color?>? backgroundColorProp =
-      (backgroundColor == null && disabledBackgroundColor == null && selectedBackgroundColor == null)
-        ? null
-        : _SegmentButtonDefaultColor(backgroundColor, disabledBackgroundColor, selectedBackgroundColor);
     final MaterialStateProperty<Color?>? overlayColorProp = (foregroundColor == null &&
       selectedForegroundColor == null && overlayColor == null)
         ? null
@@ -319,6 +318,9 @@ class SegmentedButton<T> extends StatefulWidget {
       textStyle: textStyle,
       shadowColor: shadowColor,
       surfaceTintColor: surfaceTintColor,
+      iconColor: iconColor,
+      iconSize: iconSize,
+      disabledIconColor: disabledIconColor,
       elevation: elevation,
       padding: padding,
       minimumSize: minimumSize,
@@ -335,9 +337,22 @@ class SegmentedButton<T> extends StatefulWidget {
       alignment: alignment,
       splashFactory: splashFactory,
     ).copyWith(
-      foregroundColor: foregroundColorProp,
-      backgroundColor: backgroundColorProp,
+      foregroundColor: _defaultColor(foregroundColor, disabledForegroundColor, selectedForegroundColor),
+      backgroundColor: _defaultColor(backgroundColor, disabledBackgroundColor, selectedBackgroundColor),
       overlayColor: overlayColorProp,
+    );
+  }
+
+  static WidgetStateProperty<Color?>? _defaultColor(Color? enabled, Color? disabled, Color? selected) {
+    if ((selected ?? enabled ?? disabled) == null) {
+      return null;
+    }
+    return WidgetStateProperty<Color?>.fromMap(
+      <WidgetStatesConstraint, Color?>{
+        WidgetState.disabled: disabled,
+        WidgetState.selected: selected,
+        WidgetState.any: enabled,
+      },
     );
   }
 
@@ -411,6 +426,7 @@ class SegmentedButtonState<T> extends State<SegmentedButton<T>> {
   @visibleForTesting
   final Map<ButtonSegment<T>, MaterialStatesController> statesControllers = <ButtonSegment<T>, MaterialStatesController>{};
 
+  @protected
   @override
   void didUpdateWidget(covariant SegmentedButton<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -449,6 +465,7 @@ class SegmentedButtonState<T> extends State<SegmentedButton<T>> {
     }
   }
 
+  @protected
   @override
   Widget build(BuildContext context) {
     final SegmentedButtonThemeData theme = SegmentedButtonTheme.of(context);
@@ -590,32 +607,13 @@ class SegmentedButtonState<T> extends State<SegmentedButton<T>> {
     );
   }
 
+  @protected
   @override
   void dispose() {
     for (final MaterialStatesController controller in statesControllers.values) {
       controller.dispose();
     }
     super.dispose();
-  }
-}
-
-@immutable
-class _SegmentButtonDefaultColor extends MaterialStateProperty<Color?> with Diagnosticable {
-  _SegmentButtonDefaultColor(this.color, this.disabled, this.selected);
-
-  final Color? color;
-  final Color? disabled;
-  final Color? selected;
-
-  @override
-  Color? resolve(Set<MaterialState> states) {
-    if (states.contains(MaterialState.disabled)) {
-      return disabled;
-    }
-    if (states.contains(MaterialState.selected)) {
-      return selected;
-    }
-    return color;
   }
 }
 
@@ -1152,31 +1150,24 @@ class _SegmentedButtonDefaultsM3 extends SegmentedButtonThemeData {
   @override
   Widget? get selectedIcon => const Icon(Icons.check);
 
-  static MaterialStateProperty<Color?> resolveStateColor(Color? unselectedColor, Color? selectedColor, Color? overlayColor){
-    return MaterialStateProperty.resolveWith((Set<MaterialState> states) {
-      if (states.contains(MaterialState.selected)) {
-        if (states.contains(MaterialState.pressed)) {
-          return (overlayColor ?? selectedColor)?.withOpacity(0.1);
-        }
-        if (states.contains(MaterialState.hovered)) {
-          return (overlayColor ?? selectedColor)?.withOpacity(0.08);
-        }
-        if (states.contains(MaterialState.focused)) {
-          return (overlayColor ?? selectedColor)?.withOpacity(0.1);
-        }
-      } else {
-        if (states.contains(MaterialState.pressed)) {
-          return (overlayColor ?? unselectedColor)?.withOpacity(0.1);
-        }
-        if (states.contains(MaterialState.hovered)) {
-          return (overlayColor ?? unselectedColor)?.withOpacity(0.08);
-        }
-        if (states.contains(MaterialState.focused)) {
-          return (overlayColor ?? unselectedColor)?.withOpacity(0.1);
-        }
-      }
-      return Colors.transparent;
-    });
+  static WidgetStateProperty<Color?> resolveStateColor(
+    Color? unselectedColor,
+    Color? selectedColor,
+    Color? overlayColor,
+  ) {
+    final Color? selected = overlayColor ?? selectedColor;
+    final Color? unselected = overlayColor ?? unselectedColor;
+    return WidgetStateProperty<Color?>.fromMap(
+      <WidgetStatesConstraint, Color?>{
+        WidgetState.selected & WidgetState.pressed: selected?.withOpacity(0.1),
+        WidgetState.selected & WidgetState.hovered: selected?.withOpacity(0.08),
+        WidgetState.selected & WidgetState.focused: selected?.withOpacity(0.1),
+        WidgetState.pressed: unselected?.withOpacity(0.1),
+        WidgetState.hovered: unselected?.withOpacity(0.08),
+        WidgetState.focused: unselected?.withOpacity(0.1),
+        WidgetState.any: Colors.transparent,
+      },
+    );
   }
 }
 

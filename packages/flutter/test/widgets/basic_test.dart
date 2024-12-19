@@ -617,11 +617,13 @@ void main() {
           // the UnconstrainedBox overflows.
           final dynamic exception = tester.takeException();
           expect(exception, isFlutterError, reason: 'for clip = $clip');
-          // ignore: avoid_dynamic_calls
-          expect(exception.diagnostics.first.level, DiagnosticLevel.summary, reason: 'for clip = $clip');
           expect(
-            // ignore: avoid_dynamic_calls
-            exception.diagnostics.first.toString(),
+            exception.diagnostics.first.level, // ignore: avoid_dynamic_calls
+            DiagnosticLevel.summary,
+            reason: 'for clip = $clip',
+          );
+          expect(
+            exception.diagnostics.first.toString(), // ignore: avoid_dynamic_calls
             startsWith('A RenderConstraintsTransformBox overflowed'),
             reason: 'for clip = $clip',
           );
@@ -715,7 +717,7 @@ void main() {
       renderColoredBox.paint(mockContext, Offset.zero);
 
       expect(mockCanvas.rects.single, const Rect.fromLTWH(0, 0, 800, 600));
-      expect(mockCanvas.paints.single.color, colorToPaint);
+      expect(mockCanvas.paints.single.color, isSameColorAs(colorToPaint));
       expect(mockContext.children, isEmpty);
       expect(mockContext.offsets, isEmpty);
     });
@@ -731,7 +733,7 @@ void main() {
       renderColoredBox.paint(mockContext, Offset.zero);
 
       expect(mockCanvas.rects.single, const Rect.fromLTWH(0, 0, 800, 600));
-      expect(mockCanvas.paints.single.color, colorToPaint);
+      expect(mockCanvas.paints.single.color, isSameColorAs(colorToPaint));
       expect(mockContext.children.single, renderSizedBox);
       expect(mockContext.offsets.single, Offset.zero);
     });

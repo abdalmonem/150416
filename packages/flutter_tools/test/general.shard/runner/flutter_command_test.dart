@@ -21,6 +21,7 @@ import 'package:flutter_tools/src/cache.dart';
 import 'package:flutter_tools/src/commands/run.dart';
 import 'package:flutter_tools/src/dart/pub.dart';
 import 'package:flutter_tools/src/device.dart';
+import 'package:flutter_tools/src/features.dart';
 import 'package:flutter_tools/src/globals.dart' as globals;
 import 'package:flutter_tools/src/pre_run_validator.dart';
 import 'package:flutter_tools/src/project.dart';
@@ -33,11 +34,20 @@ import 'package:unified_analytics/unified_analytics.dart';
 import '../../src/common.dart';
 import '../../src/context.dart';
 import '../../src/fake_devices.dart';
+import '../../src/fake_pub_deps.dart';
 import '../../src/fakes.dart';
 import '../../src/test_flutter_command_runner.dart';
 import 'utils.dart';
 
 void main() {
+  // TODO(matanlurey): Remove after `explicit-package-dependencies` is enabled by default.
+  // See https://github.com/flutter/flutter/issues/160257 for details.
+  FeatureFlags enableExplicitPackageDependencies() {
+    return TestFeatureFlags(
+      isExplicitPackageDependenciesEnabled: true,
+    );
+  }
+
   group('Flutter Command', () {
     late FakeCache cache;
     late TestUsage usage;
@@ -637,7 +647,8 @@ void main() {
       Pub: () => FakePub(),
       Usage: () => usage,
       FileSystem: () => fileSystem,
-      ProcessManager: () => processManager,
+      ProcessManager: () => FakeProcessManager.any(),
+      FeatureFlags: enableExplicitPackageDependencies,
     });
 
     testUsingContext('use packagesPath to generate BuildInfo', () async {
@@ -814,7 +825,6 @@ void main() {
       testUsingContext('parses values from JSON files and includes them in defines list', () async {
         fileSystem.file(fileSystem.path.join('lib', 'main.dart')).createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('config1.json').writeAsString(
           '''
             {
@@ -864,7 +874,6 @@ void main() {
           .file(fileSystem.path.join('lib', 'main.dart'))
           .createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         fileSystem.file('.env').writeAsStringSync('''
             MY_VALUE=VALUE_FROM_ENV_FILE
           ''');
@@ -893,7 +902,6 @@ void main() {
             .file(fileSystem.path.join('lib', 'main.dart'))
             .createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('.env').writeAsString('''
             # comment
             kInt=1
@@ -956,7 +964,6 @@ void main() {
             .file(fileSystem.path.join('lib', 'main.dart'))
             .createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('.env').writeAsString('what is this');
 
         await dummyCommandRunner.run(<String>[
@@ -982,7 +989,6 @@ void main() {
             .file(fileSystem.path.join('lib', 'main.dart'))
             .createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('.env').writeAsString('''
             # single line value
             name=piotrfleury
@@ -1015,7 +1021,6 @@ void main() {
             .file(fileSystem.path.join('lib', 'main.dart'))
             .createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('.env').writeAsString('''
             kInt=1
             kDouble=1.1
@@ -1053,7 +1058,6 @@ void main() {
       testUsingContext('when files contain entries with duplicate keys, uses the value from the lattermost file', () async {
         fileSystem.file(fileSystem.path.join('lib', 'main.dart')).createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('config1.json').writeAsString(
             '''
             {
@@ -1095,7 +1099,6 @@ void main() {
       testUsingContext('throws a ToolExit when the argued path points to a directory', () async {
         fileSystem.file(fileSystem.path.join('lib', 'main.dart')).createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         fileSystem.directory('config').createSync();
 
         await dummyCommandRunner.run(<String>[
@@ -1115,7 +1118,6 @@ void main() {
       testUsingContext('throws a ToolExit when the given JSON file is malformed', () async {
         fileSystem.file(fileSystem.path.join('lib', 'main.dart')).createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         await fileSystem.file('config.json').writeAsString(
           '''
             {
@@ -1174,7 +1176,6 @@ void main() {
       testUsingContext("tool exits when FLUTTER_APP_FLAVOR is already set in user's environment", () async {
         fileSystem.file('lib/main.dart').createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
 
         final FakeDevice device = FakeDevice(
           'name',
@@ -1204,7 +1205,6 @@ void main() {
       testUsingContext('tool exits when FLUTTER_APP_FLAVOR is set in --dart-define or --dart-define-from-file', () async {
         fileSystem.file('lib/main.dart').createSync(recursive: true);
         fileSystem.file('pubspec.yaml').createSync();
-        fileSystem.file('.packages').createSync();
         fileSystem.file('config.json')..createSync()..writeAsStringSync('{"FLUTTER_APP_FLAVOR": "strawberry"}');
 
         final FakeDevice device = FakeDevice(
@@ -1421,6 +1421,11 @@ class FakePub extends Fake implements Pub {
     bool shouldSkipThirdPartyGenerator = true,
     PubOutputMode outputMode = PubOutputMode.all,
   }) async { }
+
+  @override
+  Future<Map<String, Object?>> deps(FlutterProject project) {
+    return FakePubWithPrimedDeps().deps(project);
+  }
 }
 
 class _TestDeviceManager extends DeviceManager {

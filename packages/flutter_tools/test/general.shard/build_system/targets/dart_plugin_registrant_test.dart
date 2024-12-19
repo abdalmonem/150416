@@ -9,10 +9,14 @@ import 'package:flutter_tools/src/base/logger.dart';
 import 'package:flutter_tools/src/build_info.dart';
 import 'package:flutter_tools/src/build_system/build_system.dart';
 import 'package:flutter_tools/src/build_system/targets/dart_plugin_registrant.dart';
+import 'package:flutter_tools/src/dart/pub.dart';
+import 'package:flutter_tools/src/features.dart';
 import 'package:flutter_tools/src/project.dart';
 
 import '../../../src/common.dart';
 import '../../../src/context.dart';
+import '../../../src/fake_pub_deps.dart';
+import '../../../src/fakes.dart';
 
 const String _kEmptyPubspecFile = '''
 name: path_provider_example
@@ -56,11 +60,6 @@ const String _kSamplePackageJson = '''
 }
 ''';
 
-const String _kSamplePackagesFile = '''
-path_provider_linux:/path_provider_linux/lib/
-path_provider_example:lib/
-''';
-
 const String _kSamplePubspecFile = '''
 name: path_provider_example
 description: Demonstrates how to use the path_provider plugin.
@@ -86,11 +85,18 @@ flutter:
         pluginClass: none
 
 environment:
-  sdk: '>=3.2.0-0 <4.0.0'
+  sdk: ^3.7.0-0
   flutter: ">=1.20.0"
 ''';
 
 void main() {
+  // TODO(matanlurey): Remove after `explicit-package-dependencies` is enabled by default.
+  // See https://github.com/flutter/flutter/issues/160257 for details.
+  FeatureFlags enableExplicitPackageDependencies() {
+    return TestFeatureFlags(
+      isExplicitPackageDependenciesEnabled: true,
+    );
+  }
 
   group('Dart plugin registrant' , () {
     late FileSystem fileSystem;
@@ -177,8 +183,6 @@ void main() {
 
       projectDir.childFile('pubspec.yaml').createSync();
 
-      projectDir.childFile('.packages').createSync();
-
       final FlutterProject testProject = FlutterProject.fromDirectoryTest(projectDir);
       await DartPluginRegistrantTarget.test(testProject).build(environment);
 
@@ -187,6 +191,10 @@ void main() {
           .childDirectory('flutter_build')
           .childFile('dart_plugin_registrant.dart');
       expect(generatedMain.existsSync(), isFalse);
+    }, overrides: <Type, Generator>{
+      ProcessManager: () => FakeProcessManager.any(),
+      FeatureFlags: enableExplicitPackageDependencies,
+      Pub: FakePubWithPrimedDeps.new,
     });
 
     testUsingContext('regenerates dart_plugin_registrant.dart', () async {
@@ -211,8 +219,6 @@ void main() {
 
       projectDir.childFile('pubspec.yaml').writeAsStringSync(_kSamplePubspecFile);
 
-      projectDir.childFile('.packages').writeAsStringSync(_kSamplePackagesFile);
-
       projectDir.childDirectory('lib').childFile('main.dart').createSync(recursive: true);
 
       environment.fileSystem.currentDirectory
@@ -266,6 +272,10 @@ void main() {
           '}\n'
         ),
       );
+    }, overrides: <Type, Generator>{
+      ProcessManager: () => FakeProcessManager.any(),
+      FeatureFlags: enableExplicitPackageDependencies,
+      Pub: FakePubWithPrimedDeps.new,
     });
 
     testUsingContext('removes dart_plugin_registrant.dart if plugins are removed from pubspec.yaml', () async {
@@ -289,8 +299,6 @@ void main() {
 
       final File pubspec = projectDir.childFile('pubspec.yaml')..writeAsStringSync(_kSamplePubspecFile);
 
-      final File packages = projectDir.childFile('.packages')..writeAsStringSync(_kSamplePackagesFile);
-
       environment.fileSystem.currentDirectory
           .childDirectory('path_provider_linux')
           .childFile('pubspec.yaml')
@@ -308,11 +316,14 @@ void main() {
 
       // Simulate a user removing everything from pubspec.yaml.
       pubspec.writeAsStringSync(_kEmptyPubspecFile);
-      packages.writeAsStringSync(_kEmptyPackageJson);
       config.writeAsStringSync(_kEmptyPackageJson);
 
       await DartPluginRegistrantTarget.test(testProject).build(environment);
       expect(generatedMain.existsSync(), isFalse);
+    }, overrides: <Type, Generator>{
+      ProcessManager: () => FakeProcessManager.any(),
+      FeatureFlags: enableExplicitPackageDependencies,
+      Pub: FakePubWithPrimedDeps.new,
     });
 
     testUsingContext('target file is outside the current project package', () async {
@@ -337,8 +348,6 @@ void main() {
 
       projectDir.childFile('pubspec.yaml').writeAsStringSync(_kSamplePubspecFile);
 
-      projectDir.childFile('.packages').writeAsStringSync(_kSamplePackagesFile);
-
       projectDir.childDirectory('lib').childFile('main.dart').createSync(recursive: true);
 
       environment.fileSystem.currentDirectory
@@ -393,6 +402,10 @@ void main() {
           '}\n'
         ),
       );
+    }, overrides: <Type, Generator>{
+      ProcessManager: () => FakeProcessManager.any(),
+      FeatureFlags: enableExplicitPackageDependencies,
+      Pub: FakePubWithPrimedDeps.new,
     });
   });
 }
